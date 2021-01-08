@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <iostream>
 #include <time.h>
-
+#include <getopt.h>
 
 std::vector<torch::Tensor> non_max_suppression(torch::Tensor preds, float score_thresh=0.5, float iou_thresh=0.5)
 {
@@ -70,10 +70,72 @@ std::vector<torch::Tensor> non_max_suppression(torch::Tensor preds, float score_
 }
 
 
-int main()
+std::map<char, std::string> ProcessArgs(int argc, char** argv)
 {
+    const char* const short_opts = "m:w:h:";
+    const option long_opts[] = {
+            {"model", required_argument, nullptr, 'm'},
+            {"width", required_argument, nullptr, 'w'},
+            {"height", no_argument, nullptr, 'h'},
+            {nullptr, no_argument, nullptr, 0}
+    };
+
+    std::map<char, std::string> parsedArgs;
+    std::string model;
+    std::string width;
+    std::string height;
+
+    while (true)
+    {
+        const auto opt = getopt_long(argc, argv, short_opts, long_opts, nullptr);
+
+        if (-1 == opt)
+            break; // while
+
+        switch (opt)
+        {
+        case 'm':
+            model = optarg;
+            parsedArgs['m'] = model;
+            std::cout << "Using model: " << model << std::endl;
+            break; // switch
+
+        case 'w':
+            width = optarg;
+            parsedArgs['w'] = width;
+            std::cout << "Image width: " << width << std::endl;
+            break; // switch
+
+        case 'h':
+            height = optarg;
+            parsedArgs['h'] = height;
+            std::cout << "Image height: " << height << std::endl;
+            break; // switch
+
+        case '?': // Unrecognized option
+        default:
+            break; // switch
+        }
+    }
+
+    if (model.empty() || width.empty() || height.empty()) {
+        std::cerr << "Missing required arguments. Expects model, image height and width." << std::endl;
+        exit(EXIT_FAILURE);
+    }
+    return parsedArgs;
+}
+
+int 
+main(int argc, char **argv)
+{
+    std::map<char, std::string> args = ProcessArgs(argc, argv);
+
+    std::string model = args['m'];
+    int width = std::atoi(args['w'].c_str());
+    int height = std::atoi(args['h'].c_str());
+
     // Loading  Module
-    torch::jit::script::Module module = torch::jit::load("../yolov5s.torchscript.pt");
+    torch::jit::script::Module module = torch::jit::load(model);
 
     std::vector<std::string> classnames;
 	std::ifstream f("../coco.names");
@@ -98,7 +160,7 @@ int main()
         }
         
         // Preparing input tensor
-        cv::resize(frame, img, cv::Size(640, 384));
+        cv::resize(frame, img, cv::Size(width, height));
         cv::cvtColor(img, img, cv::COLOR_BGR2RGB);
         torch::Tensor imgTensor = torch::from_blob(img.data, {img.rows, img.cols,3},torch::kByte);
         imgTensor = imgTensor.permute({2,0,1});
@@ -114,10 +176,10 @@ int main()
             // Visualize result
             for (size_t i=0; i < dets[0].sizes()[0]; ++ i)
             {
-                float left = dets[0][i][0].item().toFloat() * frame.cols / 640;
-                float top = dets[0][i][1].item().toFloat() * frame.rows / 384;
-                float right = dets[0][i][2].item().toFloat() * frame.cols / 640;
-                float bottom = dets[0][i][3].item().toFloat() * frame.rows / 384;
+                float left = dets[0][i][0].item().toFloat() * frame.cols / width;
+                float top = dets[0][i][1].item().toFloat() * frame.rows / height;
+                float right = dets[0][i][2].item().toFloat() * frame.cols / width;
+                float bottom = dets[0][i][3].item().toFloat() * frame.rows / height;
                 float score = dets[0][i][4].item().toFloat();
                 int classID = dets[0][i][5].item().toInt();
 
